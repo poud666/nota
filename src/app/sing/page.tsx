@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Music2, ArrowLeft, Upload, Play, Square, Loader2,
-  AlertCircle, Headphones, Library, ChevronRight, X, FileText,
+  AlertCircle, Headphones, X, FileText, ShieldAlert, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { extractReferenceF0, hzToNoteName, centsDiff, summarize, type RefFrame, THRESH_IN_TUNE, THRESH_ACCEPTABLE } from "@/lib/pitchCompare";
 import { analyzeAudio } from "@/lib/audioAnalysis";
@@ -16,7 +16,6 @@ import { synthesizeTrack, JASMINE_NOTES, LITTLE_STAR_NOTES } from "@/lib/synthes
 import type { PitchFrame } from "@/components/PitchChart";
 
 type State = "setup" | "loading" | "ready" | "countdown" | "singing" | "processing" | "error";
-type SetupTab = "library" | "upload";
 
 const HOP = 512;
 const BUF = 2048;
@@ -30,7 +29,7 @@ function deviationColor(cents: number): string {
 export default function SingPage() {
   const router = useRouter();
   const [state, setState] = useState<State>("setup");
-  const [tab, setTab] = useState<SetupTab>("library");
+  const [showSongList, setShowSongList] = useState(true);
   const [songTitle, setSongTitle] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [elapsed, setElapsed] = useState(0);
@@ -99,7 +98,6 @@ export default function SingPage() {
     const parsed = parseLRC(song.lrc);
     setLyrics(parsed);
     lyricsRef.current = parsed;
-    setTab("upload");
   }, []);
 
   // ── 上传伴奏文件 ───────────────────────────────────────────────────
@@ -326,127 +324,118 @@ export default function SingPage() {
           )}
         </div>
 
-        {/* ── 选歌界面 ── */}
+        {/* ── 上传伴奏界面 ── */}
         {state === "setup" && (
-          <div>
-            <h1 className="text-3xl font-bold mb-2">K 歌练习</h1>
-            <p className="mb-6" style={{ color: "rgba(255,255,255,0.4)" }}>
-              选择免费伴奏或上传自己的音频，AI 实时分析音准。
-            </p>
-
-            {/* Tab 切换 */}
-            <div className="flex glass rounded-xl p-1 mb-6 gap-1">
-              {[
-                { id: "library" as SetupTab, icon: Library, label: "免费伴奏库" },
-                { id: "upload"  as SetupTab, icon: Upload,  label: "上传伴奏" },
-              ].map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all"
-                  style={tab === t.id
-                    ? { background: "rgba(168,85,247,0.25)", color: "#c084fc" }
-                    : { color: "rgba(255,255,255,0.4)" }}>
-                  <t.icon size={15} />{t.label}
-                </button>
-              ))}
+          <div className="space-y-5">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">K 歌练习</h1>
+              <p style={{ color: "rgba(255,255,255,0.4)" }}>
+                上传伴奏文件，AI 实时分析你的音准是否在调。
+              </p>
             </div>
 
-            {/* 歌曲库 */}
-            {tab === "library" && (
-              <div className="space-y-4">
-                {(["beginner","intermediate","advanced"] as const).map(level => {
-                  const songs = SONG_LIBRARY.filter(s => s.language === "zh" && s.difficulty === level);
-                  if (!songs.length) return null;
-                  const dc = DIFFICULTY_COLORS[level];
-                  return (
-                    <div key={level}>
-                      <p className={`text-xs font-semibold mb-2 ${dc.text}`}>
-                        {DIFFICULTY_LABELS[level]}
-                      </p>
-                      <div className="space-y-2">
+            {/* ⚠️ 版权提醒 */}
+            <div className="rounded-xl p-4 flex items-start gap-3"
+              style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+              <ShieldAlert size={16} className="text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1" style={{ color: "rgba(255,255,255,0.55)" }}>
+                <p className="font-semibold text-amber-400">版权提醒</p>
+                <p>请仅上传你拥有版权或已取得授权的伴奏文件。流行歌曲的伴奏受版权保护，请通过正规渠道购买或使用 CC 授权的免费资源。</p>
+                <p style={{ color: "rgba(255,255,255,0.3)" }}>Nota 不存储你上传的音频，所有分析在本地完成。</p>
+              </div>
+            </div>
+
+            {/* 歌曲列表（可折叠，仅用于预加载歌词） */}
+            <div className="glass rounded-2xl overflow-hidden">
+              <button
+                onClick={() => setShowSongList(v => !v)}
+                className="w-full flex items-center justify-between px-5 py-4 text-sm font-semibold hover:bg-white/5 transition-colors">
+                <span>练习曲目参考（点击自动加载内置歌词）</span>
+                {showSongList ? <ChevronUp size={16} style={{ color: "rgba(255,255,255,0.4)" }}/> : <ChevronDown size={16} style={{ color: "rgba(255,255,255,0.4)" }}/>}
+              </button>
+
+              {showSongList && (
+                <div className="px-3 pb-3 space-y-1 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+                  {(["intermediate","advanced"] as const).map(level => {
+                    const songs = SONG_LIBRARY.filter(s => s.language === "zh" && s.difficulty === level);
+                    if (!songs.length) return null;
+                    const dc = DIFFICULTY_COLORS[level];
+                    return (
+                      <div key={level} className="pt-3">
+                        <p className={`text-xs font-semibold mb-2 px-2 ${dc.text}`}>{DIFFICULTY_LABELS[level]}</p>
                         {songs.map(song => {
-                          const canAutoLoad = !!song.audioUrl || !!song.synthId;
+                          const active = songTitle === `${song.title} — ${song.artist}` && lyrics.length > 0;
                           return (
-                            <div key={song.id} className="glass rounded-xl p-4 flex items-center gap-3">
+                            <button key={song.id} onClick={() => loadLyricsOnly(song)}
+                              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors hover:bg-white/5"
+                              style={{ background: active ? "rgba(168,85,247,0.1)" : "transparent" }}>
                               <div className="flex-1 min-w-0">
-                                <p className="font-semibold text-sm">{song.title}</p>
-                                <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+                                <p className="text-sm font-medium truncate" style={{ color: active ? "#c084fc" : "#f0f0ff" }}>
+                                  {song.title}
+                                </p>
+                                <p className="text-xs truncate" style={{ color: "rgba(255,255,255,0.3)" }}>
                                   {song.artist}
                                 </p>
                               </div>
-                              {canAutoLoad ? (
-                                <button onClick={() => loadFromLibrary(song)}
-                                  className="btn-primary shrink-0 px-4 py-1.5 rounded-lg text-xs font-semibold">
-                                  直接练习
-                                </button>
-                              ) : (
-                                <button onClick={() => loadLyricsOnly(song)}
-                                  className="shrink-0 px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
-                                  style={{ background: "rgba(168,85,247,0.12)", color: "#c084fc", border: "1px solid rgba(168,85,247,0.25)" }}>
-                                  <Upload size={11} />
-                                  上传伴奏
-                                </button>
-                              )}
-                            </div>
+                              {active
+                                ? <span className="text-xs shrink-0" style={{ color: "#c084fc" }}>歌词已加载 ✓</span>
+                                : <span className="text-xs shrink-0" style={{ color: "rgba(255,255,255,0.25)" }}>加载歌词</span>
+                              }
+                            </button>
                           );
                         })}
                       </div>
-                    </div>
-                  );
-                })}
-                <p className="text-xs text-center pt-1" style={{ color: "rgba(255,255,255,0.18)" }}>
-                  「直接练习」= Pixabay CC0 免费音频 · 「上传伴奏」= 歌词已内置，自备伴奏文件
-                </p>
-              </div>
-            )}
-
-            {/* 上传区域 */}
-            {tab === "upload" && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: "rgba(255,255,255,0.5)" }}>
-                    歌曲名称（可选）
-                  </label>
-                  <input type="text" placeholder="例如：稻香 — 周杰伦"
-                    value={songTitle} onChange={e => setSongTitle(e.target.value)}
-                    className="w-full glass rounded-xl px-4 py-3 text-sm outline-none placeholder:text-white/20"
-                    style={{ border: "1px solid rgba(255,255,255,0.08)" }} />
-                </div>
-
-                <button onClick={() => audioFileRef.current?.click()}
-                  className="w-full glass glass-hover rounded-2xl py-6 flex flex-col items-center gap-2 group">
-                  <Upload size={22} className="text-purple-400 group-hover:scale-110 transition-transform" />
-                  <span className="font-semibold text-sm">上传伴奏文件</span>
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>MP3 / WAV / M4A / OGG</span>
-                </button>
-                <input ref={audioFileRef} type="file" accept="audio/*" className="hidden" onChange={handleAudioFile} />
-
-                {/* LRC 上传 */}
-                <div>
-                  <button onClick={() => lrcFileRef.current?.click()}
-                    className="w-full glass glass-hover rounded-xl py-3.5 flex items-center justify-center gap-2 text-sm"
-                    style={{ color: lyrics.length > 0 ? "#c084fc" : "rgba(255,255,255,0.4)" }}>
-                    <FileText size={15} />
-                    {lyrics.length > 0 ? `已加载歌词 ${lyrics.length} 行 ✓` : "上传 LRC 歌词文件（可选）"}
-                  </button>
-                  <input ref={lrcFileRef} type="file" accept=".lrc,.txt" className="hidden" onChange={handleLrcFile} />
-                  {lyrics.length > 0 && (
-                    <button onClick={() => { setLyrics([]); lyricsRef.current = []; }}
-                      className="flex items-center gap-1 mt-1 mx-auto text-xs"
-                      style={{ color: "rgba(255,255,255,0.25)" }}>
-                      <X size={11} /> 移除歌词
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-start gap-3 rounded-xl p-4"
-                  style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)" }}>
-                  <Headphones size={16} className="text-indigo-400 shrink-0 mt-0.5" />
-                  <p className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
-                    建议戴耳机收听伴奏，麦克风只录到你的声音，分析更准确。
+                    );
+                  })}
+                  <p className="text-xs px-2 pt-2 pb-1" style={{ color: "rgba(255,255,255,0.2)" }}>
+                    点击仅加载内置歌词，伴奏文件需自行上传
                   </p>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            {/* 上传区域 */}
+            <div className="space-y-3">
+              {/* 歌曲名 */}
+              <input type="text" placeholder="歌曲名称（可选，如：稻香 — 周杰伦）"
+                value={songTitle} onChange={e => setSongTitle(e.target.value)}
+                className="w-full glass rounded-xl px-4 py-3 text-sm outline-none placeholder:text-white/20"
+                style={{ border: "1px solid rgba(255,255,255,0.08)" }} />
+
+              {/* 伴奏上传 */}
+              <button onClick={() => audioFileRef.current?.click()}
+                className="w-full glass glass-hover rounded-2xl py-6 flex flex-col items-center gap-2 group">
+                <Upload size={22} className="text-purple-400 group-hover:scale-110 transition-transform" />
+                <span className="font-semibold text-sm">上传伴奏文件</span>
+                <span className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>MP3 / WAV / M4A / OGG</span>
+              </button>
+              <input ref={audioFileRef} type="file" accept="audio/*" className="hidden" onChange={handleAudioFile} />
+
+              {/* LRC 上传 */}
+              <button onClick={() => lrcFileRef.current?.click()}
+                className="w-full glass glass-hover rounded-xl py-3 flex items-center justify-center gap-2 text-sm"
+                style={{ color: lyrics.length > 0 ? "#c084fc" : "rgba(255,255,255,0.4)" }}>
+                <FileText size={15} />
+                {lyrics.length > 0 ? `歌词已加载（${lyrics.length} 行）✓` : "上传 LRC 歌词文件（可选）"}
+              </button>
+              <input ref={lrcFileRef} type="file" accept=".lrc,.txt" className="hidden" onChange={handleLrcFile} />
+              {lyrics.length > 0 && (
+                <button onClick={() => { setLyrics([]); lyricsRef.current = []; setSongTitle(""); }}
+                  className="flex items-center gap-1 mx-auto text-xs"
+                  style={{ color: "rgba(255,255,255,0.25)" }}>
+                  <X size={11} /> 清除歌词
+                </button>
+              )}
+            </div>
+
+            {/* 耳机提示 */}
+            <div className="flex items-start gap-3 rounded-xl p-4"
+              style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)" }}>
+              <Headphones size={16} className="text-indigo-400 shrink-0 mt-0.5" />
+              <p className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+                建议戴耳机收听伴奏，麦克风只录到你的声音，音准分析更准确。
+              </p>
+            </div>
           </div>
         )}
 
