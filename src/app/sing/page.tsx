@@ -12,6 +12,7 @@ import { analyzeAudio } from "@/lib/audioAnalysis";
 import { parseLRC, getCurrentLineIndex, type LyricLine } from "@/lib/lrcParser";
 import { LyricsDisplay } from "@/components/LyricsDisplay";
 import { SONG_LIBRARY, DIFFICULTY_LABELS, DIFFICULTY_COLORS, type Song } from "@/lib/songLibrary";
+import { synthesizeTrack, JASMINE_NOTES, LITTLE_STAR_NOTES } from "@/lib/synthesizer";
 import type { PitchFrame } from "@/components/PitchChart";
 
 type State = "setup" | "loading" | "ready" | "countdown" | "singing" | "processing" | "error";
@@ -59,7 +60,7 @@ export default function SingPage() {
   const audioFileRef       = useRef<HTMLInputElement>(null);
   const lrcFileRef         = useRef<HTMLInputElement>(null);
 
-  // ── 从歌曲库选歌（自动加载音频）──────────────────────────────────
+  // ── 从歌曲库选歌（自动加载或合成）──────────────────────────────────
   const loadFromLibrary = useCallback(async (song: Song) => {
     setState("loading");
     setSongTitle(`${song.title} — ${song.artist}`);
@@ -67,18 +68,27 @@ export default function SingPage() {
     setLyrics(parsed);
     lyricsRef.current = parsed;
     try {
-      if (!song.audioUrl) throw new Error("无音频");
-      const res = await fetch(song.audioUrl);
-      if (!res.ok) throw new Error("音频加载失败");
-      const arrayBuffer = await res.arrayBuffer();
-      const ctx = new AudioContext();
-      const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-      await ctx.close();
+      let audioBuffer: AudioBuffer;
+
+      if (song.synthId) {
+        // Web Audio 合成旋律伴奏（无需网络）
+        const notes = song.synthId === "jasmine" ? JASMINE_NOTES : LITTLE_STAR_NOTES;
+        const bpm   = song.synthId === "jasmine" ? 72 : 90;
+        audioBuffer = await synthesizeTrack(notes, bpm);
+      } else if (song.audioUrl) {
+        const res = await fetch(song.audioUrl);
+        if (!res.ok) throw new Error("网络错误");
+        audioBuffer = await new AudioContext().decodeAudioData(await res.arrayBuffer());
+      } else {
+        throw new Error("无音频源");
+      }
+
       backingBufferRef.current = audioBuffer;
       refFramesRef.current = await extractReferenceF0(audioBuffer, HOP);
       setState("ready");
-    } catch {
-      setErrorMsg("无法加载此伴奏，请检查网络或换一首试试。");
+    } catch (e) {
+      console.error(e);
+      setErrorMsg("无法加载伴奏，请检查网络或选择「上传伴奏」。");
       setState("error");
     }
   }, []);
@@ -354,7 +364,7 @@ export default function SingPage() {
                       </p>
                       <div className="space-y-2">
                         {songs.map(song => {
-                          const canAutoLoad = !!song.audioUrl;
+                          const canAutoLoad = !!song.audioUrl || !!song.synthId;
                           return (
                             <div key={song.id} className="glass rounded-xl p-4 flex items-center gap-3">
                               <div className="flex-1 min-w-0">

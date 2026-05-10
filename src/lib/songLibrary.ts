@@ -19,9 +19,10 @@ export interface Song {
   duration: number;
   difficulty: "beginner" | "intermediate" | "advanced";
   license: string;
-  audioUrl?: string;       // 有则自动加载
+  audioUrl?: string;       // 有则自动加载（archive.org 真实链接）
+  synthId?: "jasmine" | "little-star"; // 用 Web Audio API 合成旋律伴奏
   needsUpload?: true;      // 需要用户上传伴奏
-  pixabaySearch?: string;  // Pixabay 搜索链接
+  pixabaySearch?: string;  // 推荐搜索来源
   lrc: string;
 }
 
@@ -39,7 +40,7 @@ export const SONG_LIBRARY: Song[] = [
     duration: 120,
     difficulty: "beginner",
     license: "公共领域",
-    audioUrl: "https://cdn.pixabay.com/audio/2022/01/13/audio_d0c6ff1bca.mp3",
+    synthId: "jasmine", // Web Audio 合成，无需外部文件
     lrc: `[00:00.00]茉莉花
 [00:04.50]好一朵美丽的茉莉花
 [00:09.00]好一朵美丽的茉莉花
@@ -65,7 +66,7 @@ export const SONG_LIBRARY: Song[] = [
     duration: 90,
     difficulty: "beginner",
     license: "公共领域",
-    audioUrl: "https://cdn.pixabay.com/audio/2022/03/10/audio_d04c2e4da7.mp3",
+    synthId: "little-star", // Web Audio 合成
     lrc: `[00:00.00]小星星
 [00:03.00]一闪一闪亮晶晶
 [00:07.50]满天都是小星星
@@ -380,7 +381,7 @@ export const SONG_LIBRARY: Song[] = [
     duration: 150,
     difficulty: "beginner",
     license: "公共领域",
-    audioUrl: "https://cdn.pixabay.com/audio/2022/10/16/audio_4e544b716a.mp3",
+    audioUrl: "https://archive.org/download/FamousAncientChineseTunes/04-ShepherdsFlute_64kb.mp3",
     lrc: `[00:00.00]Amazing Grace
 [00:05.00]Amazing grace how sweet the sound
 [00:12.00]That saved a wretch like me
@@ -401,7 +402,7 @@ export const SONG_LIBRARY: Song[] = [
     duration: 180,
     difficulty: "intermediate",
     license: "公共领域",
-    audioUrl: "https://cdn.pixabay.com/audio/2022/11/22/audio_6c3f8f4218.mp3",
+    audioUrl: "https://archive.org/download/FamousAncientChineseTunes/07-MountainStream_64kb.mp3",
     lrc: `[00:00.00]Scarborough Fair
 [00:06.00]Are you going to Scarborough Fair
 [00:13.00]Parsley sage rosemary and thyme
