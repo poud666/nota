@@ -6,46 +6,57 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { songTitle = "一首歌", audioFeatures, selfDescription } = body;
+    const { songTitle = "一首歌", audioFeatures: f, selfDescription } = body;
 
-    const f = audioFeatures ?? {};
+    if (!f) return NextResponse.json({ error: "缺少音频数据" }, { status: 400 });
 
-    // 把技术数据翻译成自然语言给 Claude 理解
-    const techSummary = f.detectedNoteCount > 0 ? `
-技术检测数据（来自真实音频分析）：
-- 录音时长：${f.durationSeconds} 秒
-- 有效音高帧数：${f.detectedNoteCount}（数量越多说明发声越充分）
-- 有声占比：${Math.round(f.voicedRatio * 100)}%（正常演唱应在 40%~80%）
-- 音高稳定性：${Math.round(f.pitchStability * 100)}%（100% 为最稳定，低于 50% 说明音高飘忽）
-- 音域跨度：${f.pitchRangeSemitones} 个半音（12 = 1 个八度，正常演唱 8~20）
-- 平均音高：${f.avgPitchHz} Hz（女声通常 180~700 Hz，男声 80~400 Hz）
-- 动态范围：${Math.round(f.dynamicRange * 100)}%（越高说明强弱变化越丰富）
-- 音色清晰度：${Math.round(f.avgClarity * 100)}%（越高说明发音越干净纯正）
-` : `录音时长：${f.durationSeconds ?? 30} 秒。未能检测到足够的音高数据，可能录音时间过短或音量过低。`;
+    const techReport = `
+【音准分析】
+- 音高稳定性：${f.pitch?.stability ?? 50}/100（数值越高说明每个音持续期间越稳，不飘不抖）
+- 音准准确度：${f.pitch?.intonation ?? 50}/100（基于偏离最近半音的音分数，越高说明音越准）
+- 演唱音域：${f.pitch?.rangeOctaves ?? 1} 个八度
+- 平均音高：${f.pitch?.avgHz ?? 0} Hz（女声通常 180-700Hz，男声 80-400Hz）
+- 有声占比：${Math.round((f.pitch?.voicedRatio ?? 0.6) * 100)}%
 
-    const selfDesc = selfDescription
-      ? `歌手自我描述："${selfDescription}"`
-      : "";
+【节奏分析】
+- 节奏规律性：${f.rhythm?.regularity ?? 50}/100（发声起点间隔的稳定程度）
+- 检测乐句数：${f.rhythm?.phraseCount ?? 3}
+- 平均发声间隔：${f.rhythm?.avgOnsetIntervalMs ?? 500} ms
 
-    const prompt = `你是一位专业声乐教练，正在分析一段演唱录音。歌手演唱的是《${songTitle}》。
+【气息分析】
+- 平均乐句时长：${f.breath?.avgPhraseDuration ?? 3} 秒（越长说明气息越足）
+- 最长乐句：${f.breath?.maxPhraseDuration ?? 5} 秒
+- 句内音量稳定性：${f.breath?.volumeStability ?? 60}/100（句中音量是否平稳，不忽大忽小）
+- 句尾音高下坠率：${f.breath?.phraseEndDrop ?? 30}%（越低越好，高说明气息用尽时音高往下掉）
 
-${techSummary}
-${selfDesc}
+【频谱分析】
+- 低频占比（80-300Hz，胸腔共鸣/厚度）：${Math.round((f.spectrum?.lowRatio ?? 0.3) * 100)}%
+- 中频占比（300-3kHz，人声核心/清晰度）：${Math.round((f.spectrum?.midRatio ?? 0.5) * 100)}%
+- 高频占比（3k-8kHz，亮度/穿透力）：${Math.round((f.spectrum?.highRatio ?? 0.2) * 100)}%
+- 整体亮度：${f.spectrum?.brightness ?? 40}/100
 
-请根据以上客观数据，给出专业、客观、有建设性的声乐分析。
+录音时长：${f.duration ?? 30} 秒
+`;
 
-评分参考标准：
-- 音准（pitch）：主要参考音高稳定性和清晰度
-- 节奏（rhythm）：参考有声占比和演唱连贯性
-- 音色（tone）：参考音色清晰度和平均音高合理性
-- 气息（breath）：参考动态范围和有声占比
-- 表现力（expression）：参考音域跨度和动态范围
+    const selfDesc = selfDescription ? `\n歌手自我描述："${selfDescription}"` : "";
 
-只返回以下 JSON，不要有任何多余文字：
+    const prompt = `你是一位专业声乐教练，正在对一段演唱《${songTitle}》的录音做客观分析。
+
+以下是通过音频算法检测到的真实数据：
+${techReport}${selfDesc}
+
+请严格根据以上客观数据评分，不要凭感觉随机给分。评分逻辑：
+- pitch（音准）= 主要看"音准准确度"和"音高稳定性"
+- rhythm（节奏）= 主要看"节奏规律性"
+- breath（气息）= 主要看"平均乐句时长"和"句内音量稳定性"，句尾下坠率高则扣分
+- tone（音色）= 主要看"整体亮度"和频谱平衡（低中高频是否合理）
+- expression（表现力）= 综合音域、动态和乐句数
+
+只返回以下 JSON，不要有任何多余文字或 markdown：
 
 {
-  "overallScore": <综合分 0-100，基于数据客观打分>,
-  "level": <"beginner" 或 "intermediate" 或 "advanced">,
+  "overallScore": <综合分 0-100>,
+  "level": <"beginner"|"intermediate"|"advanced">,
   "scores": {
     "pitch": <0-100>,
     "rhythm": <0-100>,
@@ -53,10 +64,10 @@ ${selfDesc}
     "breath": <0-100>,
     "expression": <0-100>
   },
-  "strengths": [<优势1>, <优势2>],
-  "weaknesses": [<不足1>, <不足2>, <不足3>],
-  "summary": "<2句话的个性化点评，结合具体数据说明>",
-  "recommendedTechniqueIds": [<3~5个技巧ID，从以下选择: "pitch-basics","breathing-basics","rhythm-basics","vowel-shaping","posture","warm-up","chest-head-voice","breath-support","vibrato-intro","resonance","passaggio","dynamics","phrasing","mixed-voice","runs-riffs","twang","belting","stylistic-control","vocal-health-advanced">]
+  "strengths": ["<优势1，结合具体数据>", "<优势2>"],
+  "weaknesses": ["<不足1，结合具体数据>", "<不足2>", "<不足3>"],
+  "summary": "<2句话点评，必须引用至少一个具体检测数值>",
+  "recommendedTechniqueIds": ["<3-5个ID，从: pitch-basics,breathing-basics,rhythm-basics,vowel-shaping,posture,warm-up,chest-head-voice,breath-support,vibrato-intro,resonance,passaggio,dynamics,phrasing,mixed-voice,runs-riffs,twang,belting,stylistic-control,vocal-health-advanced 中选>"]
 }`;
 
     const message = await client.messages.create({
