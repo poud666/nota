@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Music2, ArrowLeft, ThumbsUp, AlertTriangle, BookOpen, ChevronRight, Mic, MusicIcon } from "lucide-react";
 import { PitchChart, type PitchFrame } from "@/components/PitchChart";
+import type { LyricLine } from "@/lib/lrcParser";
 import { techniques } from "@/lib/techniques";
 
 interface PitchCompare {
@@ -88,12 +89,14 @@ export default function SingResultsPage() {
   const [loading, setLoading] = useState(true);
   const [pitchFrames, setPitchFrames] = useState<PitchFrame[]>([]);
   const [singDuration, setSingDuration] = useState(0);
+  const [singLyrics, setSingLyrics] = useState<LyricLine[]>([]);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("nota_sing_result");
     if (!raw) { router.replace("/sing"); return; }
-    const { songTitle, duration, pitchCompare, audioFeatures, pitchFrames: pf } = JSON.parse(raw);
-    if (pf) { setPitchFrames(pf); setSingDuration(duration ?? 0); }
+    const { songTitle, duration, pitchCompare, audioFeatures, pitchFrames: pf, lyrics: lyr } = JSON.parse(raw);
+    if (pf)  { setPitchFrames(pf); setSingDuration(duration ?? 0); }
+    if (lyr) { setSingLyrics(lyr); }
     fetch("/api/sing-analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -190,7 +193,7 @@ export default function SingResultsPage() {
             <p className="text-xs mb-5" style={{ color: "rgba(255,255,255,0.35)" }}>
               灰色台阶 = 伴奏参考旋律　彩色线 = 你的演唱音高
             </p>
-            <PitchChart frames={pitchFrames} duration={singDuration} />
+            <PitchChart frames={pitchFrames} duration={singDuration} lyrics={singLyrics} />
           </div>
         )}
 
