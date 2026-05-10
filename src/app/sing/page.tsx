@@ -11,7 +11,7 @@ import { extractReferenceF0, hzToNoteName, centsDiff, summarize, type RefFrame, 
 import { analyzeAudio } from "@/lib/audioAnalysis";
 import { parseLRC, getCurrentLineIndex, type LyricLine } from "@/lib/lrcParser";
 import { LyricsDisplay } from "@/components/LyricsDisplay";
-import { SONG_LIBRARY, DIFFICULTY_LABELS, type Song } from "@/lib/songLibrary";
+import { SONG_LIBRARY, DIFFICULTY_LABELS, DIFFICULTY_COLORS, type Song } from "@/lib/songLibrary";
 import type { PitchFrame } from "@/components/PitchChart";
 
 type State = "setup" | "loading" | "ready" | "countdown" | "singing" | "processing" | "error";
@@ -59,7 +59,7 @@ export default function SingPage() {
   const audioFileRef       = useRef<HTMLInputElement>(null);
   const lrcFileRef         = useRef<HTMLInputElement>(null);
 
-  // ── 从歌曲库选歌 ────────────────────────────────────────────────────
+  // ── 从歌曲库选歌（自动加载音频）──────────────────────────────────
   const loadFromLibrary = useCallback(async (song: Song) => {
     setState("loading");
     setSongTitle(`${song.title} — ${song.artist}`);
@@ -67,6 +67,7 @@ export default function SingPage() {
     setLyrics(parsed);
     lyricsRef.current = parsed;
     try {
+      if (!song.audioUrl) throw new Error("无音频");
       const res = await fetch(song.audioUrl);
       if (!res.ok) throw new Error("音频加载失败");
       const arrayBuffer = await res.arrayBuffer();
@@ -80,6 +81,15 @@ export default function SingPage() {
       setErrorMsg("无法加载此伴奏，请检查网络或换一首试试。");
       setState("error");
     }
+  }, []);
+
+  // ── 从歌曲库预加载歌词，并切换到上传伴奏 tab ──────────────────────
+  const loadLyricsOnly = useCallback((song: Song) => {
+    setSongTitle(`${song.title} — ${song.artist}`);
+    const parsed = parseLRC(song.lrc);
+    setLyrics(parsed);
+    lyricsRef.current = parsed;
+    setTab("upload");
   }, []);
 
   // ── 上传伴奏文件 ───────────────────────────────────────────────────
@@ -332,31 +342,49 @@ export default function SingPage() {
 
             {/* 歌曲库 */}
             {tab === "library" && (
-              <div className="space-y-3">
-                {SONG_LIBRARY.map(song => (
-                  <button key={song.id} onClick={() => loadFromLibrary(song)}
-                    className="w-full glass glass-hover rounded-xl p-4 flex items-center gap-4 group text-left">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: "rgba(168,85,247,0.15)" }}>
-                      <Music2 size={16} className="text-purple-400" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm truncate">{song.title}</p>
-                      <p className="text-xs mt-0.5 truncate" style={{ color: "rgba(255,255,255,0.35)" }}>
-                        {song.artist} · {song.genre}
+              <div className="space-y-4">
+                {(["beginner","intermediate","advanced"] as const).map(level => {
+                  const songs = SONG_LIBRARY.filter(s => s.language === "zh" && s.difficulty === level);
+                  if (!songs.length) return null;
+                  const dc = DIFFICULTY_COLORS[level];
+                  return (
+                    <div key={level}>
+                      <p className={`text-xs font-semibold mb-2 ${dc.text}`}>
+                        {DIFFICULTY_LABELS[level]}
                       </p>
+                      <div className="space-y-2">
+                        {songs.map(song => {
+                          const canAutoLoad = !!song.audioUrl;
+                          return (
+                            <div key={song.id} className="glass rounded-xl p-4 flex items-center gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-sm">{song.title}</p>
+                                <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+                                  {song.artist}
+                                </p>
+                              </div>
+                              {canAutoLoad ? (
+                                <button onClick={() => loadFromLibrary(song)}
+                                  className="btn-primary shrink-0 px-4 py-1.5 rounded-lg text-xs font-semibold">
+                                  直接练习
+                                </button>
+                              ) : (
+                                <button onClick={() => loadLyricsOnly(song)}
+                                  className="shrink-0 px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+                                  style={{ background: "rgba(168,85,247,0.12)", color: "#c084fc", border: "1px solid rgba(168,85,247,0.25)" }}>
+                                  <Upload size={11} />
+                                  上传伴奏
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs px-2 py-0.5 rounded-full"
-                        style={{ background: "rgba(168,85,247,0.1)", color: "#c084fc" }}>
-                        {DIFFICULTY_LABELS[song.difficulty]}
-                      </span>
-                      <ChevronRight size={14} className="text-white/20 group-hover:text-purple-400 transition-colors" />
-                    </div>
-                  </button>
-                ))}
-                <p className="text-xs text-center pt-2" style={{ color: "rgba(255,255,255,0.2)" }}>
-                  音频来源：Pixabay Music（CC0 授权，完全免费）
+                  );
+                })}
+                <p className="text-xs text-center pt-1" style={{ color: "rgba(255,255,255,0.18)" }}>
+                  「直接练习」= Pixabay CC0 免费音频 · 「上传伴奏」= 歌词已内置，自备伴奏文件
                 </p>
               </div>
             )}
