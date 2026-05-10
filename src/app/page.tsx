@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Mic, BarChart3, BookOpen, Star, ChevronRight, Music2, Zap, Target } from "lucide-react";
+import { Mic, BarChart3, BookOpen, Star, ChevronRight, Music2, Zap, Target, Radio } from "lucide-react";
 
 const features = [
   {
@@ -68,7 +68,9 @@ export default function Home() {
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm" style={{ color: "rgba(255,255,255,0.5)" }}>
             <a href="#features" className="hover:text-white transition-colors">功能介绍</a>
-            <a href="#levels" className="hover:text-white transition-colors">适合人群</a>
+            <Link href="/sing" className="hover:text-white transition-colors flex items-center gap-1">
+              <Radio size={13} />K 歌练习
+            </Link>
             <Link href="/learn" className="hover:text-white transition-colors">技巧库</Link>
           </div>
           <Link href="/analyze" className="btn-primary px-5 py-2 rounded-full text-sm font-semibold">
@@ -103,9 +105,9 @@ export default function Home() {
             分析我的声音
             <ChevronRight size={16} />
           </Link>
-          <Link href="/learn" className="glass glass-hover flex items-center gap-2 px-8 py-4 rounded-2xl text-base font-semibold" style={{ color: "rgba(255,255,255,0.65)" }}>
-            <BookOpen size={18} />
-            浏览技巧库
+          <Link href="/sing" className="glass glass-hover flex items-center gap-2 px-8 py-4 rounded-2xl text-base font-semibold" style={{ color: "rgba(255,255,255,0.65)" }}>
+            <Radio size={18} />
+            K 歌练习
           </Link>
         </div>
 
