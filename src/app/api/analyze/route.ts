@@ -7,65 +7,94 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { songTitle = "一首歌", audioFeatures: f, selfDescription } = body;
-
     if (!f) return NextResponse.json({ error: "缺少音频数据" }, { status: 400 });
 
-    const t = f.tonality;
-    const tonalityReport = t && t.confidence > 20 ? `
-【调性与跑音分析】
-- 检测调性：${t.detectedKeyZh}（置信度 ${t.confidence}%）
-- 在调音符比例：${t.inKeyRatio}%（低于 60% 说明跑调严重）
-- 跑调音符比例：${t.offKeyRatio}%
-- 跑调时平均偏差：${t.avgOffKeyCents} 音分（100音分=1个半音，超过150音分=跑调明显）
-- 综合跑音评分：${t.inTuneScore}/100
-` : "（录音过短，无法进行调性分析）";
+    const p = f.pitch    ?? {};
+    const t = f.tonality ?? {};
+    const r = f.rhythm   ?? {};
+    const b = f.breath   ?? {};
+    const s = f.spectrum ?? {};
+    const q = f.voiceQuality ?? {};
+    const v = f.vibrato  ?? {};
 
-    const techReport = `
-【音准分析】
-- 音高稳定性：${f.pitch?.stability ?? 50}/100（数值越高说明每个音持续期间越稳，不飘不抖）
-- 音准准确度：${f.pitch?.intonation ?? 50}/100（基于偏离最近半音的音分数，越高说明音越准）
-- 演唱音域：${f.pitch?.rangeOctaves ?? 1} 个八度
-- 平均音高：${f.pitch?.avgHz ?? 0} Hz（女声通常 180-700Hz，男声 80-400Hz）
-- 有声占比：${Math.round((f.pitch?.voicedRatio ?? 0.6) * 100)}%
+    // ── 参考标准说明（帮助 Claude 基于数据评分）────────────────────────
+    const report = `
+═══════════════════════════════════════════════════════
+【演唱分析报告】  歌曲：《${songTitle}》  时长：${f.duration ?? 30}s
+═══════════════════════════════════════════════════════
 
-【节奏分析】
-- 节奏规律性：${f.rhythm?.regularity ?? 50}/100（发声起点间隔的稳定程度）
-- 检测乐句数：${f.rhythm?.phraseCount ?? 3}
-- 平均发声间隔：${f.rhythm?.avgOnsetIntervalMs ?? 500} ms
+┌─ 1. 音准（Pitch）
+│  稳定性       ${p.stability ?? 50}/100  （标准：>70 为良好，<40 为明显飘音）
+│  音准准确度   ${p.intonation ?? 50}/100  （偏离最近半音均值：${Math.round(50-(p.intonation??50)/2)} 音分）
+│  音域跨度     ${p.rangeOctaves ?? 1} 个八度  （一般演唱 0.8-2.0，职业 2.0+）
+│  平均音高     ${p.avgHz ?? 0} Hz  （女声 180-700Hz，男声 80-400Hz）
+│  有声占比     ${Math.round((p.voicedRatio ?? 0.6)*100)}%
 
-【气息分析】
-- 平均乐句时长：${f.breath?.avgPhraseDuration ?? 3} 秒（越长说明气息越足）
-- 最长乐句：${f.breath?.maxPhraseDuration ?? 5} 秒
-- 句内音量稳定性：${f.breath?.volumeStability ?? 60}/100（句中音量是否平稳，不忽大忽小）
-- 句尾音高下坠率：${f.breath?.phraseEndDrop ?? 30}%（越低越好，高说明气息用尽时音高往下掉）
+├─ 2. 调性与跑音
+│  检测调性     ${t.detectedKeyZh ?? '未知'}  （置信度 ${t.confidence ?? 0}%）
+│  在调音符     ${t.inKeyRatio ?? 50}%  （<60% 跑调严重，>85% 优秀）
+│  跑调音符     ${t.offKeyRatio ?? 50}%
+│  跑调平均偏差 ${t.avgOffKeyCents ?? 0} 音分  （<80 正常，>150 明显跑调）
+│  跑音评分     ${t.inTuneScore ?? 50}/100
 
-【频谱分析】
-- 低频占比（80-300Hz，胸腔共鸣/厚度）：${Math.round((f.spectrum?.lowRatio ?? 0.3) * 100)}%
-- 中频占比（300-3kHz，人声核心/清晰度）：${Math.round((f.spectrum?.midRatio ?? 0.5) * 100)}%
-- 高频占比（3k-8kHz，亮度/穿透力）：${Math.round((f.spectrum?.highRatio ?? 0.2) * 100)}%
-- 整体亮度：${f.spectrum?.brightness ?? 40}/100
+├─ 3. 声音质量（Voice Quality，参考 Praat 标准）
+│  HNR 谐波噪声比  ${q.hnr ?? 12} dB    （理想 >20dB，<10dB 声音嘶哑/漏气）
+│  Jitter 基频抖动 ${q.jitter ?? 1}%     （理想 <0.5%，>1% 声音粗糙，>2% 嗓音问题）
+│  Shimmer 振幅抖动 ${q.shimmer ?? 3}%   （理想 <3%，>5% 振幅不稳/漏气）
+│  Shimmer(dB)    ${q.shimmerDb ?? 0.3} dB  （理想 <0.35dB）
+│  CPPS 倒谱峰突出度 ${q.cpps ?? 8} dB   （理想 >14dB，<9dB 声音障碍）
+│  综合质量评分   ${q.qualityScore ?? 50}/100
 
-录音时长：${f.duration ?? 30} 秒
-${tonalityReport}`;
+├─ 4. 颤音（Vibrato）
+│  检测到颤音   ${v.detected ? '是' : '否（直音或无颤音）'}
+│  颤音速率     ${v.rate ?? 0} Hz      （理想 4.5-6.5Hz；<4=颤抖，>7=过快）
+│  颤音深度     ${v.extent ?? 0} 音分  （理想 50-120 音分峰-峰值）
+│  颤音规律性   ${v.regularity ?? 0}/100
+│  颤音评分     ${v.score ?? 0}/100
 
-    const selfDesc = selfDescription ? `\n歌手自我描述："${selfDescription}"` : "";
+├─ 5. 气息（Breath）
+│  平均乐句时长 ${b.avgPhraseDuration ?? 3}s  （>5s 气息充足，<2s 气息浅短）
+│  最长乐句     ${b.maxPhraseDuration ?? 5}s
+│  句内音量稳定 ${b.volumeStability ?? 60}/100  （越高气息越均匀）
+│  句尾音高下坠率 ${b.phraseEndDrop ?? 30}%    （<20% 优秀，>50% 气息严重不足）
 
-    const prompt = `你是一位专业声乐教练，正在对一段演唱《${songTitle}》的录音做客观分析。
+├─ 6. 节奏（Rhythm）
+│  规律性       ${r.regularity ?? 50}/100
+│  乐句数       ${r.phraseCount ?? 3}
+│  平均发声间隔 ${r.avgOnsetIntervalMs ?? 500} ms
 
-以下是通过音频算法检测到的真实数据：
-${techReport}${selfDesc}
+└─ 7. 频谱分析（类比混音 EQ，理想人声参考）
+   低频 80-300Hz  ${Math.round((s.lowRatio??0.3)*100)}%  （胸腔共鸣/厚度，过多则浑浊）
+   中频 300-3kHz  ${Math.round((s.midRatio??0.5)*100)}%  （人声核心，清晰度）
+   高频 3-8kHz    ${Math.round((s.highRatio??0.2)*100)}%  （亮度/穿透力，过少则暗淡）
+   SPR 歌手共振峰 ${s.spr ?? -5} dB  （>0dB 表示有歌手共振峰，受训歌手特征）
+   频谱质心       ${s.centroid ?? 1500} Hz  （演唱理想范围 1500-3500Hz）
+   频谱斜率       ${s.tilt ?? -6} dB/oct（理想 -3~-8，越接近 0 越明亮）
+   85% 滚降点     ${s.rolloff ?? 3000} Hz
+   谐波平坦度     ${s.flatness ?? 0.2}   （<0.1 为纯净谐波，>0.3 气声/噪声多）
+   亮度综合分     ${s.brightness ?? 40}/100
+${selfDescription ? `\n歌手自评："${selfDescription}"` : ''}
+═══════════════════════════════════════════════════════`;
 
-请严格根据以上客观数据评分，不要凭感觉随机给分。评分逻辑：
-- pitch（音准）= 综合"音准准确度"、"音高稳定性"和"综合跑音评分"，三者平均，跑调比例>40%则pitch不得超过50分
-- rhythm（节奏）= 主要看"节奏规律性"
-- breath（气息）= 主要看"平均乐句时长"和"句内音量稳定性"，句尾下坠率高则扣分
-- tone（音色）= 主要看"整体亮度"和频谱平衡（低中高频是否合理）
-- expression（表现力）= 综合音域、动态和乐句数
+    const prompt = `你是专业声乐教练，以下是对一段演唱的客观声学检测报告：
+${report}
 
-只返回以下 JSON，不要有任何多余文字或 markdown：
+【评分规则——必须严格遵守，不得随意给分】
+- pitch（音准）     = 音准准确度×0.4 + 音高稳定性×0.3 + 跑音评分×0.3
+- rhythm（节奏）    = 节奏规律性分直接使用
+- tone（音色）      = 综合质量评分×0.5 + 亮度分×0.3 + (SPR>0?加10:0) + 频谱平坦度低则加分
+- breath（气息）    = 句内音量稳定×0.4 + 乐句时长评分×0.4 + (句尾下坠率<30%?加分:扣分)×0.2
+- expression（表现力）= 音域×0.3 + 颤音评分×0.3 + 动态综合×0.4
+
+跑调音符>40% 则 pitch 不得超过 45。
+Jitter>2% 则 tone 不得超过 50。
+HNR<10dB 则 tone 不得超过 55。
+CPPS<8 则整体质量下调 5-10 分。
+
+只返回以下 JSON，不要有任何多余文字：
 
 {
-  "overallScore": <综合分 0-100>,
+  "overallScore": <0-100，各维度加权均值>,
   "level": <"beginner"|"intermediate"|"advanced">,
   "scores": {
     "pitch": <0-100>,
@@ -74,15 +103,17 @@ ${techReport}${selfDesc}
     "breath": <0-100>,
     "expression": <0-100>
   },
-  "strengths": ["<优势1，结合具体数据>", "<优势2>"],
-  "weaknesses": ["<不足1，结合具体数据>", "<不足2>", "<不足3>"],
-  "summary": "<2句话点评，必须引用至少一个具体检测数值>",
-  "recommendedTechniqueIds": ["<3-5个ID，从: pitch-basics,breathing-basics,rhythm-basics,vowel-shaping,posture,warm-up,chest-head-voice,breath-support,vibrato-intro,resonance,passaggio,dynamics,phrasing,mixed-voice,runs-riffs,twang,belting,stylistic-control,vocal-health-advanced 中选>"]
-}`;
+  "strengths": ["<优势1，必须引用具体数值>", "<优势2>"],
+  "weaknesses": ["<不足1，必须引用具体数值>", "<不足2>", "<不足3>"],
+  "summary": "<2句专业点评，至少引用2个具体指标数值>",
+  "recommendedTechniqueIds": ["<3-5个ID>"]
+}
+
+可选技巧ID: pitch-basics,breathing-basics,rhythm-basics,vowel-shaping,posture,warm-up,chest-head-voice,breath-support,vibrato-intro,resonance,passaggio,dynamics,phrasing,mixed-voice,runs-riffs,twang,belting,stylistic-control,vocal-health-advanced`;
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 1024,
+      max_tokens: 1200,
       messages: [{ role: "user", content: prompt }],
     });
 
@@ -91,8 +122,11 @@ ${techReport}${selfDesc}
     if (!jsonMatch) throw new Error("No JSON in response");
 
     const result = JSON.parse(jsonMatch[0]);
-    // 把客户端检测的调性数据直接附上（不依赖 Claude 生成，保持客观）
+    // 直接附上客观检测数据，供结果页展示
     if (f.tonality) result.tonality = f.tonality;
+    if (f.voiceQuality) result.voiceQuality = f.voiceQuality;
+    if (f.vibrato) result.vibrato = f.vibrato;
+    if (f.spectrum) result.spectrum = f.spectrum;
 
     return NextResponse.json(result);
   } catch (err) {

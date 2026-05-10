@@ -8,23 +8,29 @@ import { techniques } from "@/lib/techniques";
 import { scoreColor, scoreLabel } from "@/lib/utils";
 
 interface Tonality {
-  detectedKeyZh: string;
-  confidence: number;
-  inKeyRatio: number;
-  offKeyRatio: number;
-  avgOffKeyCents: number;
-  inTuneScore: number;
+  detectedKeyZh: string; confidence: number;
+  inKeyRatio: number; offKeyRatio: number; avgOffKeyCents: number; inTuneScore: number;
+}
+interface VoiceQuality {
+  hnr: number; jitter: number; shimmer: number; shimmerDb: number; cpps: number; qualityScore: number;
+}
+interface Vibrato {
+  detected: boolean; rate: number; extent: number; regularity: number; score: number;
+}
+interface SpectrumData {
+  spr: number; centroid: number; tilt: number; flatness: number; brightness: number;
+  lowRatio: number; midRatio: number; highRatio: number;
 }
 
 interface Analysis {
   overallScore: number;
   level: "beginner" | "intermediate" | "advanced";
   scores: { pitch: number; rhythm: number; tone: number; breath: number; expression: number };
-  strengths: string[];
-  weaknesses: string[];
-  summary: string;
-  recommendedTechniqueIds: string[];
+  strengths: string[]; weaknesses: string[]; summary: string; recommendedTechniqueIds: string[];
   tonality?: Tonality;
+  voiceQuality?: VoiceQuality;
+  vibrato?: Vibrato;
+  spectrum?: SpectrumData;
 }
 
 const scoreKeys = ["pitch", "rhythm", "tone", "breath", "expression"] as const;
@@ -226,6 +232,91 @@ export default function ResultsPage() {
             <p className="mt-3 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
               * 100音分 = 1个半音。跑调偏差 &gt; 150音分表示明显跑调，&lt; 50音分属于正常波动。
             </p>
+          </div>
+        )}
+
+        {/* 声音质量卡片（HNR / Jitter / Shimmer / CPPS） */}
+        {analysis.voiceQuality && (
+          <div className="glass rounded-2xl p-7 mb-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-semibold">声音质量检测</h2>
+              <span className="text-sm font-bold" style={{ color: analysis.voiceQuality.qualityScore>=70?"#34d399":analysis.voiceQuality.qualityScore>=45?"#a855f7":"#f87171" }}>
+                {analysis.voiceQuality.qualityScore}/100
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {[
+                { label:"HNR 谐波噪声比", val:`${analysis.voiceQuality.hnr} dB`, ref:"理想 >20 dB", ok:analysis.voiceQuality.hnr>=20 },
+                { label:"Jitter 基频抖动", val:`${analysis.voiceQuality.jitter}%`, ref:"理想 <0.5%", ok:analysis.voiceQuality.jitter<0.5 },
+                { label:"Shimmer 振幅抖动", val:`${analysis.voiceQuality.shimmer}%`, ref:"理想 <3%", ok:analysis.voiceQuality.shimmer<3 },
+                { label:"CPPS 倒谱峰突出", val:`${analysis.voiceQuality.cpps} dB`, ref:"理想 >14 dB", ok:analysis.voiceQuality.cpps>=14 },
+              ].map((m,i)=>(
+                <div key={i} className="rounded-xl p-3" style={{ background:"rgba(255,255,255,0.04)" }}>
+                  <p className="text-xs mb-1" style={{ color:"rgba(255,255,255,0.35)" }}>{m.label}</p>
+                  <p className="font-semibold" style={{ color:m.ok?"#34d399":"#f87171" }}>{m.val}</p>
+                  <p className="text-xs mt-0.5" style={{ color:"rgba(255,255,255,0.2)" }}>{m.ref}</p>
+                </div>
+              ))}
+            </div>
+            {analysis.spectrum && (
+              <div className="mt-4 pt-4" style={{ borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+                <p className="text-xs font-medium mb-3" style={{ color:"rgba(255,255,255,0.4)" }}>频谱分析（对标混音 EQ 标准）</p>
+                <div className="space-y-2">
+                  {[
+                    { label:"低频（胸腔/厚度）", val:Math.round(analysis.spectrum.lowRatio*100), color:"#60a5fa" },
+                    { label:"中频（人声核心）", val:Math.round(analysis.spectrum.midRatio*100), color:"#a855f7" },
+                    { label:"高频（亮度/穿透）", val:Math.round(analysis.spectrum.highRatio*100), color:"#f59e0b" },
+                  ].map((b,i)=>(
+                    <div key={i} className="flex items-center gap-3 text-xs">
+                      <span className="w-28 shrink-0" style={{ color:"rgba(255,255,255,0.5)" }}>{b.label}</span>
+                      <div className="flex-1 h-1.5 rounded-full" style={{ background:"rgba(255,255,255,0.06)" }}>
+                        <div className="h-full rounded-full transition-all duration-1000" style={{ width:`${Math.min(b.val*2,100)}%`, background:b.color }} />
+                      </div>
+                      <span className="w-8 text-right font-mono" style={{ color:b.color }}>{b.val}%</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-3 mt-3 text-xs" style={{ color:"rgba(255,255,255,0.35)" }}>
+                  <span>SPR: <span className="font-semibold" style={{ color:analysis.spectrum.spr>0?"#34d399":"#f87171" }}>{analysis.spectrum.spr>0?"+":""}{analysis.spectrum.spr}dB</span></span>
+                  <span>质心: {analysis.spectrum.centroid}Hz</span>
+                  <span>斜率: {analysis.spectrum.tilt}dB/oct</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 颤音分析 */}
+        {analysis.vibrato && (
+          <div className="glass rounded-2xl p-7 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold">颤音（Vibrato）分析</h2>
+              <span className="text-xs px-3 py-1 rounded-full" style={{
+                background: analysis.vibrato.detected?"rgba(168,85,247,0.15)":"rgba(255,255,255,0.05)",
+                color: analysis.vibrato.detected?"#c084fc":"rgba(255,255,255,0.3)"
+              }}>
+                {analysis.vibrato.detected?"检测到颤音":"未检测到颤音"}
+              </span>
+            </div>
+            {analysis.vibrato.detected ? (
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                {[
+                  { label:"速率", val:`${analysis.vibrato.rate} Hz`, ref:"理想 4.5-6.5", ok:analysis.vibrato.rate>=4.5&&analysis.vibrato.rate<=6.5 },
+                  { label:"深度", val:`${analysis.vibrato.extent}¢`, ref:"理想 50-120 音分", ok:analysis.vibrato.extent>=50&&analysis.vibrato.extent<=120 },
+                  { label:"规律性", val:`${analysis.vibrato.regularity}%`, ref:">60% 为稳定", ok:analysis.vibrato.regularity>=60 },
+                ].map((m,i)=>(
+                  <div key={i} className="rounded-xl p-3" style={{ background:"rgba(255,255,255,0.04)" }}>
+                    <p className="text-xs mb-1" style={{ color:"rgba(255,255,255,0.35)" }}>{m.label}</p>
+                    <p className="font-semibold" style={{ color:m.ok?"#34d399":"#f59e0b" }}>{m.val}</p>
+                    <p className="text-xs mt-0.5" style={{ color:"rgba(255,255,255,0.2)" }}>{m.ref}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm" style={{ color:"rgba(255,255,255,0.4)" }}>
+                演唱中未发现 4–8 Hz 的规律音高振荡。颤音能让长音更有温度和专业感，建议学习颤音入门技巧。
+              </p>
+            )}
           </div>
         )}
 
