@@ -3,9 +3,18 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Music2, ArrowLeft, ThumbsUp, AlertTriangle, BookOpen, ChevronRight } from "lucide-react";
+import { Music2, ArrowLeft, ThumbsUp, AlertTriangle, BookOpen, ChevronRight, MusicIcon } from "lucide-react";
 import { techniques } from "@/lib/techniques";
 import { scoreColor, scoreLabel } from "@/lib/utils";
+
+interface Tonality {
+  detectedKeyZh: string;
+  confidence: number;
+  inKeyRatio: number;
+  offKeyRatio: number;
+  avgOffKeyCents: number;
+  inTuneScore: number;
+}
 
 interface Analysis {
   overallScore: number;
@@ -15,6 +24,7 @@ interface Analysis {
   weaknesses: string[];
   summary: string;
   recommendedTechniqueIds: string[];
+  tonality?: Tonality;
 }
 
 const scoreKeys = ["pitch", "rhythm", "tone", "breath", "expression"] as const;
@@ -146,6 +156,78 @@ export default function ResultsPage() {
             ))}
           </div>
         </div>
+
+        {/* 调性跑音分析 */}
+        {analysis.tonality && analysis.tonality.confidence > 20 && (
+          <div className="glass rounded-2xl p-7 mb-6">
+            <div className="flex items-center gap-2 mb-5">
+              <MusicIcon size={18} className="text-purple-400" />
+              <h2 className="font-semibold">调性与跑音分析</h2>
+              <span className="ml-auto text-xs px-2 py-1 rounded-lg" style={{ background: "rgba(168,85,247,0.1)", color: "#c084fc" }}>
+                检测调性：{analysis.tonality.detectedKeyZh}
+              </span>
+            </div>
+
+            {/* 跑音评分环 */}
+            <div className="flex items-center gap-6 mb-5">
+              <div className="relative w-20 h-20 shrink-0">
+                <svg className="w-full h-full -rotate-90" viewBox="0 0 56 56">
+                  <circle cx="28" cy="28" r="24" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
+                  <circle
+                    cx="28" cy="28" r="24"
+                    fill="none"
+                    stroke={analysis.tonality.inTuneScore >= 70 ? "#34d399" : analysis.tonality.inTuneScore >= 45 ? "#a855f7" : "#f87171"}
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                    strokeDasharray="150.8"
+                    strokeDashoffset={150.8 - (analysis.tonality.inTuneScore / 100) * 150.8}
+                    style={{ transition: "stroke-dashoffset 1.4s ease-out" }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-lg font-bold">{analysis.tonality.inTuneScore}</span>
+                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>跑音</span>
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-3">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+                    <span>在调音符</span>
+                    <span className="text-emerald-400 font-semibold">{analysis.tonality.inKeyRatio}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+                    <div className="h-full rounded-full bg-emerald-400 transition-all duration-1000" style={{ width: `${analysis.tonality.inKeyRatio}%` }} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+                    <span>跑调音符</span>
+                    <span className="text-red-400 font-semibold">{analysis.tonality.offKeyRatio}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+                    <div className="h-full rounded-full bg-red-400 transition-all duration-1000" style={{ width: `${analysis.tonality.offKeyRatio}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.04)" }}>
+                <p style={{ color: "rgba(255,255,255,0.35)" }} className="text-xs mb-1">平均跑调偏差</p>
+                <p className="font-semibold">{analysis.tonality.avgOffKeyCents} <span className="text-xs font-normal" style={{ color: "rgba(255,255,255,0.35)" }}>音分</span></p>
+              </div>
+              <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.04)" }}>
+                <p style={{ color: "rgba(255,255,255,0.35)" }} className="text-xs mb-1">调性置信度</p>
+                <p className="font-semibold">{analysis.tonality.confidence}<span className="text-xs font-normal" style={{ color: "rgba(255,255,255,0.35)" }}>%</span></p>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>
+              * 100音分 = 1个半音。跑调偏差 &gt; 150音分表示明显跑调，&lt; 50音分属于正常波动。
+            </p>
+          </div>
+        )}
 
         {/* 优势与不足 */}
         <div className="grid md:grid-cols-2 gap-4 mb-6">

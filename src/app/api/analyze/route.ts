@@ -10,6 +10,16 @@ export async function POST(req: NextRequest) {
 
     if (!f) return NextResponse.json({ error: "缺少音频数据" }, { status: 400 });
 
+    const t = f.tonality;
+    const tonalityReport = t && t.confidence > 20 ? `
+【调性与跑音分析】
+- 检测调性：${t.detectedKeyZh}（置信度 ${t.confidence}%）
+- 在调音符比例：${t.inKeyRatio}%（低于 60% 说明跑调严重）
+- 跑调音符比例：${t.offKeyRatio}%
+- 跑调时平均偏差：${t.avgOffKeyCents} 音分（100音分=1个半音，超过150音分=跑调明显）
+- 综合跑音评分：${t.inTuneScore}/100
+` : "（录音过短，无法进行调性分析）";
+
     const techReport = `
 【音准分析】
 - 音高稳定性：${f.pitch?.stability ?? 50}/100（数值越高说明每个音持续期间越稳，不飘不抖）
@@ -36,7 +46,7 @@ export async function POST(req: NextRequest) {
 - 整体亮度：${f.spectrum?.brightness ?? 40}/100
 
 录音时长：${f.duration ?? 30} 秒
-`;
+${tonalityReport}`;
 
     const selfDesc = selfDescription ? `\n歌手自我描述："${selfDescription}"` : "";
 
@@ -46,7 +56,7 @@ export async function POST(req: NextRequest) {
 ${techReport}${selfDesc}
 
 请严格根据以上客观数据评分，不要凭感觉随机给分。评分逻辑：
-- pitch（音准）= 主要看"音准准确度"和"音高稳定性"
+- pitch（音准）= 综合"音准准确度"、"音高稳定性"和"综合跑音评分"，三者平均，跑调比例>40%则pitch不得超过50分
 - rhythm（节奏）= 主要看"节奏规律性"
 - breath（气息）= 主要看"平均乐句时长"和"句内音量稳定性"，句尾下坠率高则扣分
 - tone（音色）= 主要看"整体亮度"和频谱平衡（低中高频是否合理）
@@ -80,7 +90,11 @@ ${techReport}${selfDesc}
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("No JSON in response");
 
-    return NextResponse.json(JSON.parse(jsonMatch[0]));
+    const result = JSON.parse(jsonMatch[0]);
+    // 把客户端检测的调性数据直接附上（不依赖 Claude 生成，保持客观）
+    if (f.tonality) result.tonality = f.tonality;
+
+    return NextResponse.json(result);
   } catch (err) {
     console.error("Analysis error:", err);
     return NextResponse.json({ error: "分析失败，请重试" }, { status: 500 });

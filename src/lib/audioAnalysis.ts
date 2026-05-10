@@ -1,6 +1,6 @@
 /**
  * 音频特征提取模块
- * 在浏览器端分析录音，提取音准、节奏、气息、频谱等客观指标
+ * 在浏览器端分析录音，提取音准、节奏、气息、频谱、调性跑音等客观指标
  */
 
 export interface AudioAnalysisResult {
@@ -13,6 +13,17 @@ export interface AudioAnalysisResult {
     rangeOctaves: number;    // 演唱音域（八度）
     avgHz: number;           // 平均音高频率
     voicedRatio: number;     // 有声发音占总录音比例
+  };
+
+  /** 调性与跑音分析 */
+  tonality: {
+    detectedKey: string;      // 检测到的调性，如 "C Major"
+    detectedKeyZh: string;    // 中文，如 "C大调"
+    confidence: number;       // 调性检测置信度 0-100
+    inKeyRatio: number;       // 在调内的音符比例 0-100
+    offKeyRatio: number;      // 跑调音符比例 0-100
+    avgOffKeyCents: number;   // 跑调时平均偏差（音分，100音分=1半音）
+    inTuneScore: number;      // 综合跑调评分 0-100（越高越不跑调）
   };
 
   /** 节奏：发声规律性 */
@@ -104,6 +115,108 @@ function computeSpectrum(chunk: Float32Array, sampleRate: number) {
   return { low, mid, high, total };
 }
 
+// ─── 调性检测：Krumhansl-Schmuckler 算法 ─────────────────────────────────────
+
+// 大调 / 小调音高分布轮廓（Krumhansl & Kessler 1982）
+const KK_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const KK_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+const MAJOR_SCALE_INTERVALS = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_SCALE_INTERVALS = [0, 2, 3, 5, 7, 8, 10];
+const NOTE_EN  = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const NOTE_ZH  = ['C','♭D','D','♭E','E','F','♯F','G','♭A','A','♭B','B'];
+
+function pearsonCorr(a: number[], b: number[]): number {
+  const n = a.length;
+  const ma = a.reduce((s, v) => s + v, 0) / n;
+  const mb = b.reduce((s, v) => s + v, 0) / n;
+  let num = 0, da2 = 0, db2 = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - ma, db = b[i] - mb;
+    num += da * db; da2 += da * da; db2 += db * db;
+  }
+  return da2 && db2 ? num / Math.sqrt(da2 * db2) : 0;
+}
+
+function detectKey(pitchesHz: number[]) {
+  // 建立音级（pitch class）直方图
+  const hist = new Array(12).fill(0);
+  for (const hz of pitchesHz) {
+    const midi = 12 * Math.log2(hz / 440) + 69;
+    hist[((Math.round(midi) % 12) + 12) % 12]++;
+  }
+  const total = hist.reduce((a, b) => a + b, 1);
+  const norm = hist.map(v => v / total);
+
+  let bestKey = 0, bestMode: 'major' | 'minor' = 'major', bestCorr = -Infinity;
+  for (let k = 0; k < 12; k++) {
+    const majR = [...KK_MAJOR.slice(k), ...KK_MAJOR.slice(0, k)];
+    const minR = [...KK_MINOR.slice(k), ...KK_MINOR.slice(0, k)];
+    const cMaj = pearsonCorr(norm, majR);
+    const cMin = pearsonCorr(norm, minR);
+    if (cMaj > bestCorr) { bestCorr = cMaj; bestKey = k; bestMode = 'major'; }
+    if (cMin > bestCorr) { bestCorr = cMin; bestKey = k; bestMode = 'minor'; }
+  }
+
+  // 置信度：最佳相关系数映射到 0-100
+  const confidence = Math.round(Math.max(0, Math.min(100, (bestCorr + 1) / 2 * 100)));
+
+  return {
+    key: bestKey,
+    mode: bestMode,
+    confidence,
+    keyName: `${NOTE_EN[bestKey]} ${bestMode === 'major' ? 'Major' : 'Minor'}`,
+    keyNameZh: `${NOTE_ZH[bestKey]}${bestMode === 'major' ? '大调' : '小调'}`,
+  };
+}
+
+function analyzeOffKey(pitchesHz: number[], keyRoot: number, mode: 'major' | 'minor') {
+  const intervals = mode === 'major' ? MAJOR_SCALE_INTERVALS : MINOR_SCALE_INTERVALS;
+  // 该调的音级集合（0-11）
+  const scaleNotes = new Set(intervals.map(i => (keyRoot + i) % 12));
+
+  let offKeyCount = 0;
+  let offKeyCentsSum = 0;
+  let totalCentsFromChromatic = 0;
+
+  for (const hz of pitchesHz) {
+    const midiFloat = 12 * Math.log2(hz / 440) + 69;
+    const pc = ((Math.round(midiFloat) % 12) + 12) % 12;
+    // 偏离最近半音的音分（chromatic intonation）
+    const centsFromChromatic = Math.abs((midiFloat - Math.round(midiFloat)) * 100);
+    totalCentsFromChromatic += centsFromChromatic;
+
+    // 偏离最近调内音的半音数
+    let minScaleDist = Infinity;
+    for (const sn of scaleNotes) {
+      const d = Math.min(Math.abs(pc - sn), 12 - Math.abs(pc - sn));
+      if (d < minScaleDist) minScaleDist = d;
+    }
+
+    // 总偏差 = 音分偏差 + 调外半音 × 100
+    const totalDev = centsFromChromatic + minScaleDist * 100;
+    if (totalDev > 80) {   // 超过 80 音分认定为跑调
+      offKeyCount++;
+      offKeyCentsSum += totalDev;
+    }
+  }
+
+  const n = pitchesHz.length || 1;
+  const offKeyRatio = Math.round((offKeyCount / n) * 100);
+  const avgOffKeyCents = offKeyCount > 0 ? Math.round(offKeyCentsSum / offKeyCount) : 0;
+  const avgChromatic = totalCentsFromChromatic / n;
+  // 综合评分：在调比例权重 70%，音分精准度权重 30%
+  const inTuneScore = Math.round(Math.max(0, Math.min(100,
+    (100 - offKeyRatio) * 0.7 + Math.max(0, 100 - avgChromatic * 2) * 0.3
+  )));
+
+  return {
+    inKeyRatio: 100 - offKeyRatio,
+    offKeyRatio,
+    avgOffKeyCents,
+    inTuneScore,
+  };
+}
+
 // ─── 音准检测（McLeod 风格，使用 pitchy）─────────────────────────────────────
 
 function hzToMidi(hz: number): number {
@@ -172,8 +285,32 @@ export async function analyzeAudio(blob: Blob): Promise<AudioAnalysisResult> {
     }
   }
 
-  // ── 音准计算 ────────────────────────────────────────────────────────────
+  // ── 调性检测 & 跑音分析 ────────────────────────────────────────────────
   const hasEnoughPitch = pitchesHz.length >= 10;
+  let tonality: AudioAnalysisResult["tonality"];
+
+  if (hasEnoughPitch) {
+    const keyInfo = detectKey(pitchesHz);
+    const offKeyInfo = analyzeOffKey(pitchesHz, keyInfo.key, keyInfo.mode);
+    tonality = {
+      detectedKey: keyInfo.keyName,
+      detectedKeyZh: keyInfo.keyNameZh,
+      confidence: keyInfo.confidence,
+      ...offKeyInfo,
+    };
+  } else {
+    tonality = {
+      detectedKey: "Unknown",
+      detectedKeyZh: "未知",
+      confidence: 0,
+      inKeyRatio: 50,
+      offKeyRatio: 50,
+      avgOffKeyCents: 0,
+      inTuneScore: 50,
+    };
+  }
+
+  // ── 音准计算 ────────────────────────────────────────────────────────────
 
   const semitones = pitchesHz.map((p) => 12 * Math.log2(p / 440));
   const avgST = semitones.length ? semitones.reduce((a, b) => a + b) / semitones.length : 0;
@@ -296,6 +433,7 @@ export async function analyzeAudio(blob: Blob): Promise<AudioAnalysisResult> {
       avgHz,
       voicedRatio,
     },
+    tonality,
     rhythm: {
       regularity: rhythmRegularity,
       phraseCount: phrases.length,
