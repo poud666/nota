@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Music2, ArrowLeft, ThumbsUp, AlertTriangle, BookOpen, ChevronRight, Mic, MusicIcon } from "lucide-react";
+import { PitchChart, type PitchFrame } from "@/components/PitchChart";
 import { techniques } from "@/lib/techniques";
 
 interface PitchCompare {
@@ -85,11 +86,14 @@ export default function SingResultsPage() {
   const router = useRouter();
   const [result, setResult] = useState<SingResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pitchFrames, setPitchFrames] = useState<PitchFrame[]>([]);
+  const [singDuration, setSingDuration] = useState(0);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("nota_sing_result");
     if (!raw) { router.replace("/sing"); return; }
-    const { songTitle, duration, pitchCompare, audioFeatures } = JSON.parse(raw);
+    const { songTitle, duration, pitchCompare, audioFeatures, pitchFrames: pf } = JSON.parse(raw);
+    if (pf) { setPitchFrames(pf); setSingDuration(duration ?? 0); }
     fetch("/api/sing-analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -178,6 +182,17 @@ export default function SingResultsPage() {
             * 参考标准：职业歌手均值 ~30¢，±25¢ 内为感知在调（Sundberg 声学研究）。颤音已自动消除影响。
           </p>
         </div>
+
+        {/* 音准走势图 */}
+        {pitchFrames.length > 10 && (
+          <div className="glass rounded-2xl p-7 mb-6">
+            <h2 className="font-semibold mb-1">音准走势图</h2>
+            <p className="text-xs mb-5" style={{ color: "rgba(255,255,255,0.35)" }}>
+              灰色台阶 = 伴奏参考旋律　彩色线 = 你的演唱音高
+            </p>
+            <PitchChart frames={pitchFrames} duration={singDuration} />
+          </div>
+        )}
 
         {/* 调性跑音 */}
         {result.tonality && result.tonality.confidence > 20 && (

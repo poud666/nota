@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Music2, ArrowLeft, Upload, Play, Square, Loader2, AlertCircle, Headphones } from "lucide-react";
 import { extractReferenceF0, hzToNoteName, centsDiff, summarize, type RefFrame, THRESH_IN_TUNE, THRESH_ACCEPTABLE } from "@/lib/pitchCompare";
+import type { PitchFrame } from "@/components/PitchChart";
 import { analyzeAudio } from "@/lib/audioAnalysis";
 
 type State = "setup" | "loading" | "ready" | "countdown" | "singing" | "processing" | "error";
@@ -42,6 +43,8 @@ export default function SingPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordChunksRef = useRef<Blob[]>([]);
   const elapsedRef = useRef(0);
+  const pitchFramesRef = useRef<PitchFrame[]>([]);  // 降采样时间戳帧
+  const lastFrameTimeRef = useRef(0);               // 控制降采样间隔
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,6 +111,8 @@ export default function SingPage() {
       analyserRef.current = analyser;
 
       voiceF0sRef.current = [];
+      pitchFramesRef.current = [];
+      lastFrameTimeRef.current = 0;
       setState("singing");
       setElapsed(0);
       elapsedRef.current = 0;
@@ -144,6 +149,17 @@ export default function SingPage() {
           setCurrentDeviation(Infinity);
         } else {
           setCurrentNote("--");
+        }
+
+        // 每 100ms 采集一帧用于走势图（降采样）
+        const elapsedNowSec = elapsedNow;
+        if (elapsedNowSec - lastFrameTimeRef.current >= 0.1) {
+          pitchFramesRef.current.push({
+            t: Math.round(elapsedNowSec * 10) / 10,
+            voice: voiceHz,
+            ref: refFrame?.f0 ?? 0,
+          });
+          lastFrameTimeRef.current = elapsedNowSec;
         }
 
         if (elapsedNow >= (backingBufferRef.current?.duration ?? 0)) {
@@ -200,6 +216,7 @@ export default function SingPage() {
       duration: elapsedRef.current,
       pitchCompare,
       audioFeatures,
+      pitchFrames: pitchFramesRef.current,
     }));
     router.push("/sing/results");
   }, [songTitle, router]);
