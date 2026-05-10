@@ -19,17 +19,25 @@ interface Analysis {
 
 const scoreKeys = ["pitch", "rhythm", "tone", "breath", "expression"] as const;
 const scoreLabels: Record<string, string> = {
-  pitch: "Pitch Accuracy",
-  rhythm: "Rhythm & Timing",
-  tone: "Tone Quality",
-  breath: "Breath Control",
-  expression: "Expression",
+  pitch: "音准",
+  rhythm: "节奏",
+  tone: "音色",
+  breath: "气息",
+  expression: "表现力",
 };
 
 const levelStyles = {
-  beginner: { text: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/25", label: "Beginner" },
-  intermediate: { text: "text-purple-400", bg: "bg-purple-400/10", border: "border-purple-400/25", label: "Intermediate" },
-  advanced: { text: "text-amber-400", bg: "bg-amber-400/10", border: "border-amber-400/25", label: "Advanced" },
+  beginner:     { text: "text-emerald-400", bg: "bg-emerald-400/10", border: "border-emerald-400/25", label: "初级" },
+  intermediate: { text: "text-purple-400",  bg: "bg-purple-400/10",  border: "border-purple-400/25",  label: "中级" },
+  advanced:     { text: "text-amber-400",   bg: "bg-amber-400/10",   border: "border-amber-400/25",   label: "高级" },
+};
+
+const scoreLabelCN = (score: number) => {
+  if (score >= 85) return "优秀";
+  if (score >= 70) return "良好";
+  if (score >= 55) return "进步中";
+  if (score >= 40) return "需要练习";
+  return "入门阶段";
 };
 
 function ScoreBar({ label, score, delay = 0 }: { label: string; score: number; delay?: number }) {
@@ -79,7 +87,7 @@ function CircleScore({ score }: { score: number }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className="text-4xl font-bold">{score}</span>
-        <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{scoreLabel(score)}</span>
+        <span className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>{scoreLabelCN(score)}</span>
       </div>
     </div>
   );
@@ -105,7 +113,7 @@ export default function ResultsPage() {
       <div className="fixed top-1/3 left-1/2 -translate-x-1/2 w-[700px] h-[500px] rounded-full blur-3xl pointer-events-none" style={{ background: "rgba(168,85,247,0.06)" }} />
 
       <div className="max-w-2xl mx-auto relative z-10">
-        {/* Header */}
+        {/* 顶部导航 */}
         <div className="flex items-center gap-3 mb-10">
           <Link href="/analyze" className="glass p-2 rounded-xl hover:bg-white/10 transition-colors">
             <ArrowLeft size={18} />
@@ -116,22 +124,22 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        {/* Overall score */}
+        {/* 综合得分 */}
         <div className="glass rounded-3xl p-8 mb-6 text-center glow-purple">
-          <p className="text-sm font-medium mb-6" style={{ color: "rgba(255,255,255,0.4)" }}>Your Vocal Score</p>
+          <p className="text-sm font-medium mb-6" style={{ color: "rgba(255,255,255,0.4)" }}>你的唱功得分</p>
           <CircleScore score={analysis.overallScore} />
           <div className={`inline-flex items-center gap-2 mt-5 px-4 py-1.5 rounded-full border text-sm font-semibold ${lvl.text} ${lvl.bg} ${lvl.border}`}>
-            <div className={`w-2 h-2 rounded-full ${lvl.text.replace("text-", "bg-")}`} />
-            {lvl.label} Level
+            <div className="w-2 h-2 rounded-full" style={{ background: "currentColor" }} />
+            {lvl.label}水平
           </div>
           <p className="mt-5 leading-relaxed text-sm max-w-md mx-auto" style={{ color: "rgba(255,255,255,0.55)" }}>
             {analysis.summary}
           </p>
         </div>
 
-        {/* Score breakdown */}
+        {/* 详细评分 */}
         <div className="glass rounded-2xl p-7 mb-6">
-          <h2 className="font-semibold mb-5">Score Breakdown</h2>
+          <h2 className="font-semibold mb-5">各维度评分</h2>
           <div className="space-y-4">
             {scoreKeys.map((k, i) => (
               <ScoreBar key={k} label={scoreLabels[k]} score={analysis.scores[k]} delay={i * 100} />
@@ -139,12 +147,12 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        {/* Strengths & Weaknesses */}
+        {/* 优势与不足 */}
         <div className="grid md:grid-cols-2 gap-4 mb-6">
           <div className="glass rounded-2xl p-6" style={{ borderColor: "rgba(52,211,153,0.2)" }}>
             <div className="flex items-center gap-2 mb-4">
               <ThumbsUp size={16} className="text-emerald-400" />
-              <h3 className="font-semibold text-emerald-400">Strengths</h3>
+              <h3 className="font-semibold text-emerald-400">你的优势</h3>
             </div>
             <ul className="space-y-2">
               {analysis.strengths.map((s, i) => (
@@ -159,7 +167,7 @@ export default function ResultsPage() {
           <div className="glass rounded-2xl p-6" style={{ borderColor: "rgba(251,146,60,0.2)" }}>
             <div className="flex items-center gap-2 mb-4">
               <AlertTriangle size={16} className="text-amber-400" />
-              <h3 className="font-semibold text-amber-400">Work On</h3>
+              <h3 className="font-semibold text-amber-400">需要提升</h3>
             </div>
             <ul className="space-y-2">
               {analysis.weaknesses.map((w, i) => (
@@ -172,16 +180,16 @@ export default function ResultsPage() {
           </div>
         </div>
 
-        {/* Recommended techniques */}
+        {/* 推荐训练计划 */}
         {recommended.length > 0 && (
           <div className="glass rounded-2xl p-7 mb-8">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <BookOpen size={18} className="text-purple-400" />
-                <h2 className="font-semibold">Your Training Plan</h2>
+                <h2 className="font-semibold">你的专属训练计划</h2>
               </div>
               <Link href="/learn" className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1">
-                See all <ChevronRight size={12} />
+                查看全部 <ChevronRight size={12} />
               </Link>
             </div>
             <div className="space-y-3">
@@ -201,13 +209,13 @@ export default function ResultsPage() {
           </div>
         )}
 
-        {/* CTA buttons */}
+        {/* 底部按钮 */}
         <div className="flex gap-3">
           <Link href="/analyze" className="flex-1 glass glass-hover rounded-xl py-3.5 text-center text-sm font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
-            Analyze Again
+            再次分析
           </Link>
           <Link href="/learn" className="flex-1 btn-primary rounded-xl py-3.5 text-center text-sm font-semibold">
-            Start Training →
+            开始训练 →
           </Link>
         </div>
       </div>
