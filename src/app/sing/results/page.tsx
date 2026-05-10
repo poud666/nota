@@ -7,8 +7,15 @@ import { Music2, ArrowLeft, ThumbsUp, AlertTriangle, BookOpen, ChevronRight, Mic
 import { techniques } from "@/lib/techniques";
 
 interface PitchCompare {
-  totalComparable: number; inTuneFrames: number; slightOffFrames: number;
-  offTuneFrames: number; inTuneRatio: number; avgDeviationCents: number; pitchAccuracyScore: number;
+  totalComparable: number;
+  inTuneFrames: number;
+  acceptableFrames: number;
+  offTuneFrames: number;
+  inTuneRatio: number;
+  acceptableRatio: number;
+  avgDeviationCents: number;
+  pitchAccuracyScore: number;
+  vsProLabel: string;
 }
 interface VoiceQuality { hnr: number; jitter: number; shimmer: number; shimmerDb: number; cpps: number; qualityScore: number; }
 interface Vibrato { detected: boolean; rate: number; extent: number; regularity: number; score: number; }
@@ -132,10 +139,17 @@ export default function SingResultsPage() {
         {/* 伴奏对比音准 */}
         <div className="glass rounded-2xl p-7 mb-6">
           <h2 className="font-semibold mb-5">伴奏对比音准</h2>
-          <div className="flex rounded-xl overflow-hidden h-10 mb-4 text-xs font-semibold">
+          {/* 对照职业标准标签 */}
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold mb-5"
+            style={{background:"rgba(168,85,247,0.12)",color:"#c084fc",border:"1px solid rgba(168,85,247,0.2)"}}>
+            {pc.vsProLabel}
+          </div>
+
+          {/* 三段式分布条 */}
+          <div className="flex rounded-xl overflow-hidden h-10 mb-3 text-xs font-semibold">
             {[
               {count:pc.inTuneFrames,color:"rgba(52,211,153,0.3)",text:"#34d399"},
-              {count:pc.slightOffFrames,color:"rgba(245,158,11,0.3)",text:"#f59e0b"},
+              {count:pc.acceptableFrames,color:"rgba(245,158,11,0.3)",text:"#f59e0b"},
               {count:pc.offTuneFrames,color:"rgba(248,113,113,0.3)",text:"#f87171"},
             ].map((seg,i)=>{
               const pct=pc.totalComparable>0?Math.round(seg.count/pc.totalComparable*100):0;
@@ -143,14 +157,15 @@ export default function SingResultsPage() {
             })}
           </div>
           <div className="flex gap-4 text-xs mb-5" style={{color:"rgba(255,255,255,0.4)"}}>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"/>在调（±50¢）</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block"/>轻微跑调</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>明显跑调</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"/>在调（±25¢）</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block"/>尚可（25-50¢）</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>跑调（{">"} 50¢）</span>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 mb-3">
             {[
-              {label:"在调率",val:`${pc.inTuneRatio}%`,color:pc.inTuneRatio>=70?"#34d399":pc.inTuneRatio>=50?"#f59e0b":"#f87171"},
-              {label:"平均偏差",val:`${pc.avgDeviationCents}¢`,color:pc.avgDeviationCents<=50?"#34d399":pc.avgDeviationCents<=100?"#f59e0b":"#f87171"},
+              {label:"在调率（±25¢）",val:`${pc.inTuneRatio}%`,color:pc.inTuneRatio>=65?"#34d399":pc.inTuneRatio>=45?"#f59e0b":"#f87171"},
+              {label:"可接受率（±50¢）",val:`${pc.acceptableRatio}%`,color:pc.acceptableRatio>=80?"#34d399":pc.acceptableRatio>=60?"#f59e0b":"#f87171"},
+              {label:"平均偏差",val:`${pc.avgDeviationCents}¢`,color:pc.avgDeviationCents<=30?"#34d399":pc.avgDeviationCents<=50?"#f59e0b":"#f87171"},
               {label:"音准得分",val:`${pc.pitchAccuracyScore}`,color:scoreColor(pc.pitchAccuracyScore)},
             ].map((m,i)=>(
               <div key={i} className="rounded-xl p-3 text-center" style={{background:"rgba(255,255,255,0.04)"}}>
@@ -159,6 +174,9 @@ export default function SingResultsPage() {
               </div>
             ))}
           </div>
+          <p className="text-xs" style={{color:"rgba(255,255,255,0.25)"}}>
+            * 参考标准：职业歌手均值 ~30¢，±25¢ 内为感知在调（Sundberg 声学研究）。颤音已自动消除影响。
+          </p>
         </div>
 
         {/* 调性跑音 */}

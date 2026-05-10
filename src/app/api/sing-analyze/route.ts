@@ -17,12 +17,22 @@ export async function POST(req: NextRequest) {
     const t = f?.tonality ?? {};
 
     const pitchSection = `
-【伴奏对比音准（最核心指标）】
-- 在调帧（±50音分）  ：${pc.inTuneFrames} 帧 = ${pc.inTuneRatio}%
-- 轻微跑调（50-100¢）：${pc.slightOffFrames} 帧
-- 明显跑调（>100¢）  ：${pc.offTuneFrames} 帧
-- 平均偏差           ：${pc.avgDeviationCents} 音分（<50 优秀，>100 明显跑调）
-- 音准得分           ：${pc.pitchAccuracyScore}/100`;
+【伴奏对比音准（最核心指标，已消除颤音干扰）】
+- 在调帧（±25¢感知标准）：${pc.inTuneFrames} 帧 = ${pc.inTuneRatio}%
+- 尚可帧（25-50¢）      ：${pc.acceptableFrames ?? 0} 帧
+- 跑调帧（>50¢）        ：${pc.offTuneFrames} 帧
+- 可接受率（±50¢内）    ：${pc.acceptableRatio ?? 0}%
+- 平均偏差              ：${pc.avgDeviationCents} 音分
+- 对照评级              ：${pc.vsProLabel ?? ""}
+- 音准得分              ：${pc.pitchAccuracyScore}/100
+
+【学术参考标准（评分时必须遵守，不得过度苛刻）】
+职业歌手均值约 30¢，±25¢ 内为感知在调（Sundberg 1994，录音室经验证）
+- 在调率 >65% 且均值 <30¢ → 接近职业水准，pitch 给 80+
+- 在调率 50-65% 且均值 <50¢ → 进阶水平，pitch 给 65-80
+- 在调率 35-50% → 中级水平，pitch 给 50-65
+- 在调率 <35% → 初级，pitch <50
+- 均值 25-45¢ 属正常人声波动，不视为跑调`;
 
     const voiceSection = f ? `
 【声音质量（Praat 标准）】
@@ -58,8 +68,8 @@ export async function POST(req: NextRequest) {
 ${pitchSection}
 ${voiceSection}
 
-【评分规则——必须严格遵守】
-- pitch（音准）     = pitchAccuracyScore 直接使用（这是和伴奏对比的真实音准）
+【评分规则】
+- pitch（音准）= pitchAccuracyScore 为基础，对照上方学术标准微调（不得过度扣分）
 - rhythm（节奏）    = 节奏规律性
 - tone（音色）      = 综合质量评分×0.5 + 亮度×0.3 + SPR>0加10分
 - breath（气息）    = 句内稳定性×0.4 + 乐句时长评分×0.4 + 句尾下坠×0.2

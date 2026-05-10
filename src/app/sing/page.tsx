@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Music2, ArrowLeft, Upload, Play, Square, Loader2, AlertCircle, Headphones } from "lucide-react";
-import { extractReferenceF0, hzToNoteName, centsDiff, summarize, type RefFrame } from "@/lib/pitchCompare";
+import { extractReferenceF0, hzToNoteName, centsDiff, summarize, type RefFrame, THRESH_IN_TUNE, THRESH_ACCEPTABLE } from "@/lib/pitchCompare";
 import { analyzeAudio } from "@/lib/audioAnalysis";
 
 type State = "setup" | "loading" | "ready" | "countdown" | "singing" | "processing" | "error";
@@ -13,9 +13,8 @@ const HOP = 512;
 const BUF = 2048;
 
 function deviationColor(cents: number): string {
-  if (cents === Infinity || cents > 150) return "#f87171";
-  if (cents > 80) return "#f59e0b";
-  if (cents > 50) return "#facc15";
+  if (cents === Infinity || cents > THRESH_ACCEPTABLE) return "#f87171";
+  if (cents > THRESH_IN_TUNE) return "#f59e0b";
   return "#34d399";
 }
 
@@ -138,7 +137,7 @@ export default function SingPage() {
           setCurrentDeviation(dev);
           setCurrentNote(hzToNoteName(voiceHz));
           totalCount++;
-          if (dev <= 50) inTuneCount++;
+          if (dev <= THRESH_IN_TUNE) inTuneCount++;
           setInTuneRatio(Math.round((inTuneCount / totalCount) * 100));
         } else if (voiceHz > 0) {
           setCurrentNote(hzToNoteName(voiceHz));
@@ -342,7 +341,9 @@ export default function SingPage() {
                 <span>偏低</span>
                 <span style={{ color: devColor }}>
                   {currentDeviation === Infinity ? "等待演唱…" :
-                    currentDeviation <= 50 ? "✓ 在调" : `偏差 ${Math.round(currentDeviation)} 音分`}
+                    currentDeviation <= THRESH_IN_TUNE ? "✓ 在调" :
+                    currentDeviation <= THRESH_ACCEPTABLE ? `轻微偏差 ${Math.round(currentDeviation)}¢` :
+                    `跑调 ${Math.round(currentDeviation)}¢`}
                 </span>
                 <span>偏高</span>
               </div>
