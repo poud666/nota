@@ -7,37 +7,114 @@ import { Mic, Square, Upload, Music2, ArrowLeft, Loader2, AlertCircle, MessageSq
 
 type State = "idle" | "recording" | "recorded" | "analyzing" | "error";
 
-interface PitchData {
-  avgDeviation: number;
-  inTuneRatio: number;
-  rangeOctaves: number;
+export interface AudioFeatures {
+  durationSeconds: number;
+  // 音高相关
+  detectedNoteCount: number;   // 检测到的有效音高帧数
+  voicedRatio: number;         // 有声部分占比 0-1
+  pitchStability: number;      // 音高稳定性 0-1（越高越稳）
+  pitchRangeSemitones: number; // 音域跨度（半音数）
+  avgPitchHz: number;          // 平均音高频率
+  // 动态相关
+  dynamicRange: number;        // 响度动态范围 0-1
+  avgClarity: number;          // 音色清晰度 0-1
 }
 
-async function extractPitchFeatures(blob: Blob): Promise<PitchData> {
+async function extractAudioFeatures(blob: Blob): Promise<AudioFeatures> {
   try {
+    const { PitchDetector } = await import("pitchy");
     const arrayBuffer = await blob.arrayBuffer();
     const ctx = new AudioContext();
     const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
     const data = audioBuffer.getChannelData(0);
     const sampleRate = audioBuffer.sampleRate;
+    const duration = audioBuffer.duration;
 
-    const frameSize = Math.floor(sampleRate * 0.05);
-    const frames: number[] = [];
-    for (let i = 0; i + frameSize < data.length; i += frameSize) {
-      let energy = 0;
-      for (let j = 0; j < frameSize; j++) energy += data[i + j] ** 2;
-      frames.push(Math.sqrt(energy / frameSize));
+    const BUF = 2048;
+    const HOP = BUF / 2;
+    const detector = PitchDetector.forFloat32Array(BUF);
+
+    const pitchesHz: number[] = [];
+    const clarities: number[] = [];
+    const volumes: number[] = [];
+    let totalFrames = 0;
+
+    for (let i = 0; i + BUF < data.length; i += HOP) {
+      totalFrames++;
+      const chunk = data.slice(i, i + BUF) as unknown as Float32Array;
+
+      // 音量 RMS
+      let rms = 0;
+      for (let j = 0; j < BUF; j++) rms += chunk[j] ** 2;
+      volumes.push(Math.sqrt(rms / BUF));
+
+      // 音高检测（仅处理有声部分）
+      if (Math.sqrt(rms / BUF) > 0.005) {
+        const [pitch, clarity] = detector.findPitch(chunk, sampleRate);
+        // 人声范围约 80–1200 Hz，清晰度 > 0.85 才计入
+        if (clarity > 0.85 && pitch > 80 && pitch < 1200) {
+          pitchesHz.push(pitch);
+          clarities.push(clarity);
+        }
+      }
     }
 
-    const nonSilent = frames.filter((e) => e > 0.01).length;
-    const inTuneRatio = Math.min(0.95, 0.45 + nonSilent / frames.length * 0.5);
-    const avgDeviation = Math.max(5, 60 - inTuneRatio * 55);
-    const rangeOctaves = 0.8 + Math.random() * 1.4;
-
     await ctx.close();
-    return { avgDeviation, inTuneRatio, rangeOctaves };
+
+    if (pitchesHz.length < 5) {
+      // 录音太短或无声，返回中等默认值
+      return {
+        durationSeconds: duration,
+        detectedNoteCount: 0,
+        voicedRatio: 0,
+        pitchStability: 0.5,
+        pitchRangeSemitones: 0,
+        avgPitchHz: 0,
+        dynamicRange: 0.3,
+        avgClarity: 0.5,
+      };
+    }
+
+    // 音高稳定性：用半音单位计算标准差，越小越稳定
+    const semitones = pitchesHz.map((p) => 12 * Math.log2(p / 440));
+    const avgST = semitones.reduce((a, b) => a + b, 0) / semitones.length;
+    const stdST = Math.sqrt(semitones.reduce((a, b) => a + (b - avgST) ** 2, 0) / semitones.length);
+    const pitchStability = Math.max(0, Math.min(1, 1 - stdST / 8)); // 8个半音内映射到0-1
+
+    // 音域跨度
+    const pitchRangeSemitones = Math.round(Math.max(...semitones) - Math.min(...semitones));
+
+    // 动态范围
+    const maxVol = Math.max(...volumes);
+    const nonSilent = volumes.filter((v) => v > 0.01);
+    const minVol = nonSilent.length ? Math.min(...nonSilent) : 0;
+    const dynamicRange = maxVol > 0 ? Math.min(1, (maxVol - minVol) / maxVol) : 0;
+
+    const avgClarity = clarities.reduce((a, b) => a + b, 0) / clarities.length;
+    const voicedRatio = pitchesHz.length / totalFrames;
+    const avgPitchHz = Math.round(pitchesHz.reduce((a, b) => a + b, 0) / pitchesHz.length);
+
+    return {
+      durationSeconds: Math.round(duration),
+      detectedNoteCount: pitchesHz.length,
+      voicedRatio: Math.round(voicedRatio * 100) / 100,
+      pitchStability: Math.round(pitchStability * 100) / 100,
+      pitchRangeSemitones,
+      avgPitchHz,
+      dynamicRange: Math.round(dynamicRange * 100) / 100,
+      avgClarity: Math.round(avgClarity * 100) / 100,
+    };
   } catch {
-    return { avgDeviation: 35, inTuneRatio: 0.68, rangeOctaves: 1.2 };
+    return {
+      durationSeconds: 30,
+      detectedNoteCount: 0,
+      voicedRatio: 0.6,
+      pitchStability: 0.5,
+      pitchRangeSemitones: 12,
+      avgPitchHz: 260,
+      dynamicRange: 0.4,
+      avgClarity: 0.7,
+    };
   }
 }
 
@@ -100,15 +177,14 @@ export default function AnalyzePage() {
     setState("analyzing");
 
     try {
-      const pitchData = await extractPitchFeatures(audioBlob);
+      const audioFeatures = await extractAudioFeatures(audioBlob);
 
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           songTitle: songTitle || "一首歌",
-          durationSeconds: recordingTime || 30,
-          pitchData,
+          audioFeatures,
           selfDescription,
         }),
       });
